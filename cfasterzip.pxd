@@ -46,6 +46,9 @@ cdef extern from "miniz.h":
     ctypedef struct mz_zip_archive:
         pass
 
+    ctypedef struct mz_zip_reader_extract_iter_state:
+        pass
+
     ctypedef struct mz_zip_archive_file_stat:
         mz_uint32 m_file_index;
         uint64_t m_central_dir_ofs;
@@ -67,18 +70,20 @@ cdef extern from "miniz.h":
         char m_filename[512];
         char m_comment[512];
 
-
     cdef void mz_free(void *)
     cdef void mz_zip_zero_struct(mz_zip_archive *)
-
 
     cdef mz_bool mz_zip_reader_init_file(mz_zip_archive *, const char *, mz_uint32)
     cdef mz_bool mz_zip_end(mz_zip_archive *)
 
     cdef mz_uint mz_zip_reader_get_num_files(mz_zip_archive *)
+    cdef int mz_zip_reader_locate_file(mz_zip_archive *, const char *, const char *, mz_uint flags)
     cdef mz_bool mz_zip_reader_file_stat(mz_zip_archive *, mz_uint, mz_zip_archive_file_stat *)
 
     cdef void *mz_zip_reader_extract_file_to_heap(mz_zip_archive *, const char *, size_t *, mz_uint)
+    cdef mz_zip_reader_extract_iter_state* mz_zip_reader_extract_file_iter_new(mz_zip_archive *, const char *, mz_uint)
+    cdef size_t mz_zip_reader_extract_iter_read(mz_zip_reader_extract_iter_state*, void*, size_t)
+    cdef mz_bool mz_zip_reader_extract_iter_free(mz_zip_reader_extract_iter_state*)
 
-    cdef mz_zip_error mz_zip_get_last_error(mz_zip_archive *);
-    cdef const char *mz_zip_get_error_string(mz_zip_error);
+    cdef mz_zip_error mz_zip_get_last_error(mz_zip_archive *)
+    cdef const char *mz_zip_get_error_string(mz_zip_error)
