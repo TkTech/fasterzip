@@ -102,7 +102,7 @@ cdef class ZipFile:
                 )
             )
 
-        yield <char[:uncompressed_size]>p
+        yield <bytes[:uncompressed_size]>p
         mz_free(p)
 
     def __len__(self):
