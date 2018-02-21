@@ -6,4 +6,4 @@ when compared to the built-in [zipfile] module. Extraction of ZIP files with
 many entries is typically around ~33% faster.
 
 [miniz]: https://github.com/richgel999/miniz 
-[zipfipe]: https://docs.python.org/3/library/zipfile.html
+[zipfile]: https://docs.python.org/3/library/zipfile.html
