@@ -83,7 +83,7 @@ cdef class ZipFile:
             # We raise KeyError here to mimic the behaviour of the stdlib
             # zipfile.
             raise KeyError(
-                'There is not item named {0!r} in the archive'.format(
+                'There is no item named {0!r} in the archive'.format(
                     path
                 )
             )
