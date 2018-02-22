@@ -1,39 +1,54 @@
+import io
 import zipfile
 import contextlib
+from libc.stdio cimport FILE
 from cpython.mem cimport PyMem_Malloc, PyMem_Free
-from cfasterzip cimport (
-    mz_zip_archive,
-    mz_zip_zero_struct,
-    mz_zip_reader_init_file,
-    mz_zip_get_error_string,
-    mz_zip_get_last_error,
-    mz_zip_end,
-    mz_zip_reader_get_num_files,
-    mz_zip_archive_file_stat,
-    mz_zip_reader_file_stat,
-    mz_zip_reader_extract_file_to_heap,
-    mz_zip_reader_extract_iter_state,
-    mz_zip_reader_extract_file_iter_new,
-    mz_zip_reader_extract_iter_read,
-    mz_zip_reader_extract_iter_free,
-    mz_zip_reader_locate_file,
-    mz_free
-)
+from cpython.buffer cimport PyBUF_READ
+cimport cfasterzip as cfz
 
 
 cdef class ZipFile:
-    cdef mz_zip_archive* _zip_archive;
+    cdef cfz.mz_zip_archive* zip_archive
+    cdef FILE* zip_descriptor
 
     def __init__(self, file):
-        status = mz_zip_reader_init_file(
-            self._zip_archive,
-            file,
-            0
-        )
+        """
+        Open a ZIP file, where file can be a path to a file (a byte string) or
+        a file-like object.
+
+        :param file: Path to a file or a file-like object.
+        """
+        if isinstance(file, io.IOBase):
+            try:
+                # To use `init_cfile` we need to get a FILE* handle of our
+                # own.
+                self.zip_descriptor = cfz.fdopen(file.fileno(), 'rb')
+                if self.zip_descriptor == NULL:
+                    raise IOError('Unable to open file descriptor.')
+            except (io.UnsupportedOperation, IOError, AttributeError):
+                # TODO: What can we do about this without killing performance?
+                raise NotImplementedError(
+                    'File-like object passed to ZipFile does not support'
+                    ' fileno()'
+                )
+            else:
+                status = cfz.mz_zip_reader_init_cfile(
+                    self.zip_archive,
+                    self.zip_descriptor,
+                    0,
+                    0
+                )
+        else:
+            status = cfz.mz_zip_reader_init_file(
+                self.zip_archive,
+                file,
+                0
+            )
+
         if not status:
             raise zipfile.BadZipFile(
-                mz_zip_get_error_string(
-                    mz_zip_get_last_error(self._zip_archive)
+                cfz.mz_zip_get_error_string(
+                    cfz.mz_zip_get_last_error(self.zip_archive)
                 )
             )
 
@@ -42,24 +57,24 @@ cdef class ZipFile:
         # Must, must, must make sure either this allocation was a success
         # or we abort otherwise CPython will die with vague unfriendly
         # segfaults.
-        self._zip_archive = <mz_zip_archive*> PyMem_Malloc(
-            sizeof(mz_zip_archive)
+        self.zip_archive = <cfz.mz_zip_archive*> PyMem_Malloc(
+            sizeof(cfz.mz_zip_archive)
         )
         # Allocation failed (can only occur due to out-of-memory)
-        if not self._zip_archive:
+        if not self.zip_archive:
             raise MemoryError()
 
-        mz_zip_zero_struct(self._zip_archive)
+        cfz.mz_zip_zero_struct(self.zip_archive)
 
     def __dealloc__(self):
         """Called on object deallocation."""
-        mz_zip_end(self._zip_archive)
-        PyMem_Free(self._zip_archive)
+        cfz.mz_zip_end(self.zip_archive)
+        PyMem_Free(self.zip_archive)
 
-    def _locate_file(self, path):
+    cdef _locate_file(self, path):
         """Given a an archive entry path return its index."""
-        idx = mz_zip_reader_locate_file(
-            self._zip_archive,
+        idx = cfz.mz_zip_reader_locate_file(
+            self.zip_archive,
             path,
             NULL,
             0
@@ -82,20 +97,20 @@ cdef class ZipFile:
         :param path: The archive entry path
         :return: dict
         """
-        cdef mz_zip_archive_file_stat stat
+        cdef cfz.mz_zip_archive_file_stat stat
 
         idx = self._locate_file(path)
 
-        status = mz_zip_reader_file_stat(
-            self._zip_archive,
+        status = cfz.mz_zip_reader_file_stat(
+            self.zip_archive,
             idx,
             &stat
         )
 
         if not status:
             raise zipfile.BadZipFile(
-                mz_zip_get_error_string(
-                    mz_zip_get_last_error(self._zip_archive)
+                cfz.mz_zip_get_error_string(
+                    cfz.mz_zip_get_last_error(self.zip_archive)
                 )
             )
 
@@ -107,18 +122,18 @@ cdef class ZipFile:
 
         :rtype: Iterator[dict]
         """
-        cdef mz_zip_archive_file_stat stat
+        cdef cfz.mz_zip_archive_file_stat stat
 
         for i in range(len(self)):
-            status = mz_zip_reader_file_stat(
-                self._zip_archive,
+            status = cfz.mz_zip_reader_file_stat(
+                self.zip_archive,
                 i,
                 &stat
             )
             if not status:
                 raise zipfile.BadZipFile(
-                    mz_zip_get_error_string(
-                        mz_zip_get_last_error(self._zip_archive)
+                    cfz.mz_zip_get_error_string(
+                        cfz.mz_zip_get_last_error(self.zip_archive)
                     )
                 )
 
@@ -151,24 +166,26 @@ cdef class ZipFile:
         :param path: The archive entry path.
         :return: memory view of decompressed contents.
         """
-        cdef void *p
+        cdef char *p
         cdef size_t uncompressed_size
 
-        p = mz_zip_reader_extract_file_to_heap(
-            self._zip_archive,
+        p = <char*>cfz.mz_zip_reader_extract_file_to_heap(
+            self.zip_archive,
             path,
             &uncompressed_size,
             0
         )
         if not p:
             raise zipfile.BadZipFile(
-                mz_zip_get_error_string(
-                    mz_zip_get_last_error(self._zip_archive)
+                cfz.mz_zip_get_error_string(
+                    cfz.mz_zip_get_last_error(self.zip_archive)
                 )
             )
 
-        yield <char[:uncompressed_size]>p
-        mz_free(p)
+        # Using a vanilla C API view here instead of the more convenient
+        # Cython typed memory view is slightly faster.
+        yield cfz.PyMemoryView_FromMemory(p, uncompressed_size, PyBUF_READ)
+        cfz.mz_free(p)
 
     def read_iter(self, path, max_chunk_size=0x100000):
         """Read the contents of `path`, yielding chunks of at most
@@ -186,7 +203,7 @@ cdef class ZipFile:
         :param max_chunk_size: The maximum size of the buffer (in bytes)
         """
         cdef unsigned long copied_bytes = 0
-        cdef mz_zip_reader_extract_iter_state* state
+        cdef cfz.mz_zip_reader_extract_iter_state* state
         cdef char* buff = <char*>PyMem_Malloc(max_chunk_size)
 
         if not buff:
@@ -197,21 +214,21 @@ cdef class ZipFile:
             # iterating.
             stat = self.getinfo(path)
 
-            state = mz_zip_reader_extract_file_iter_new(
-                self._zip_archive,
+            state = cfz.mz_zip_reader_extract_file_iter_new(
+                self.zip_archive,
                 path,
                 0
             )
             if not state:
                 raise zipfile.BadZipFile(
-                    mz_zip_get_error_string(
-                        mz_zip_get_last_error(self._zip_archive)
+                    cfz.mz_zip_get_error_string(
+                        cfz.mz_zip_get_last_error(self.zip_archive)
                     )
                 )
 
             try:
                 while copied_bytes < stat['m_uncomp_size']:
-                    size_read = mz_zip_reader_extract_iter_read(
+                    size_read = cfz.mz_zip_reader_extract_iter_read(
                         state,
                         buff,
                         max_chunk_size
@@ -221,10 +238,10 @@ cdef class ZipFile:
 
                     copied_bytes += size_read
             finally:
-                mz_zip_reader_extract_iter_free(state)
+                cfz.mz_zip_reader_extract_iter_free(state)
         finally:
             PyMem_Free(buff)
 
     def __len__(self):
         """Returns the number of archive entries in the zipfile."""
-        return mz_zip_reader_get_num_files(self._zip_archive)
+        return cfz.mz_zip_reader_get_num_files(self.zip_archive)
