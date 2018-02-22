@@ -9,8 +9,7 @@ many entries is typically around ~33% faster.
 
 | Sample | CPython zipfile | fasterzip | Speedup |
 | --- | --- | --- | --- |
-| Reading 100000 1-byte files | ~3.43ms | ~1.24ms | 63% |
-| 
+| Reading 100000 1-byte files | ~3.43s | ~1.24s | 63% |
 
 [miniz]: https://github.com/richgel999/miniz 
 [zipfile]: https://docs.python.org/3/library/zipfile.html
