@@ -90,7 +90,7 @@ cdef class ZipFile:
 
         return idx
 
-    def getinfo(self, path):
+    cpdef getinfo(self, path):
         """
         Return a dict with information about the archive member name.
 
@@ -123,6 +123,7 @@ cdef class ZipFile:
         :rtype: Iterator[dict]
         """
         cdef cfz.mz_zip_archive_file_stat stat
+        cdef cfz.mz_uint i
 
         for i in range(len(self)):
             status = cfz.mz_zip_reader_file_stat(
